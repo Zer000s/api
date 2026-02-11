@@ -2,6 +2,44 @@ const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middleware/auth.middleware');
 const imageController = require('../controllers/imageController');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const { v4: uuidv4 } = require('uuid');
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadDir = process.env.UPLOAD_DIR || './uploads';
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = uuidv4();
+        const userId = req.user?.id || 'anonymous';
+        const sanitizedUserId = userId.replace(/[^a-zA-Z0-9]/g, '-');
+        cb(null, `${sanitizedUserId}-${uniqueSuffix}${path.extname(file.originalname)}`);
+    }
+});
+
+const upload = multer({
+    storage: storage,
+    limits: {
+        fileSize: parseInt(process.env.MAX_FILE_SIZE || '10485760') // 10MB
+    },
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = /jpeg|jpg|png|gif|webp/;
+        const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+        const mimetype = allowedTypes.test(file.mimetype);
+        
+        if (mimetype && extname) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only image files are allowed (jpeg, jpg, png, gif, webp)'));
+        }
+    }
+});
 
 // Получить все изображения пользователя
 router.get('/', imageController.getUserImages);
@@ -13,7 +51,7 @@ router.get('/stats', imageController.getUserStats);
 router.get('/:filename', imageController.getImageInfo);
 
 // Загрузка и анализ изображения
-router.post('/analyze', imageController.analyze);
+router.post('/analyze', upload.single('image'), imageController.analyze);
 
 // Удаление изображения
 router.delete('/:filename', imageController.delete);

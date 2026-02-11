@@ -118,8 +118,7 @@ class ImageService {
                 analysis_data: result.analysis,
                 prompt: result.prompt,
                 metadata: {
-                    uploadedAt: new Date().toISOString(),
-                    ip: file.ip || null
+                    uploadedAt: new Date().toISOString()
                 }
             });
 

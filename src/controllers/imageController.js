@@ -31,12 +31,17 @@ class ImageController {
     analyze = async (req, res, next) => {
         try {
             const userId = req.user.id;
-
-            // Обрабатываем загрузку файла
-            const file = await imageService.handleUpload(req, res);
+            
+            // Файл уже доступен в req.file благодаря middleware в роутере
+            if (!req.file) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'No file uploaded'
+                });
+            }
 
             // Анализируем изображение
-            const result = await imageService.analyzeImage(file, userId);
+            const result = await imageService.analyzeImage(req.file, userId);
 
             res.json({
                 success: true,
@@ -52,6 +57,10 @@ class ImageController {
                 }
             });
         } catch (error) {
+            // Удаляем файл при ошибке
+            if (req.file && req.file.path && require('fs').existsSync(req.file.path)) {
+                require('fs').unlinkSync(req.file.path);
+            }
             next(error);
         }
     }
