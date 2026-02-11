@@ -1,4 +1,4 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { GoogleGenAI } = require("@google/genai");
 const fs = require('fs');
 
 class GeminiService {
@@ -6,14 +6,18 @@ class GeminiService {
         if (!process.env.GEMINI_API_KEY) {
             throw new Error('GEMINI_API_KEY is required');
         }
-        this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        this.model = this.genAI.getGenerativeModel({ 
-            model: process.env.GEMINI_MODEL || 'gemini-1.5-flash-latest' 
+        
+        // Инициализация клиента
+        this.ai = new GoogleGenAI({
+            apiKey: process.env.GEMINI_API_KEY
         });
+        
+        // Модель по умолчанию
+        this.model = process.env.GEMINI_MODEL || 'gemini-2.0-flash-exp';
     }
 
     // Анализ изображения
-    analyzeImage = async (imageBuffer, mimeType) => {
+    async analyzeImage(imageBuffer, mimeType) {
         try {
             console.log('🔍 Analyzing image with Gemini...');
             
@@ -32,23 +36,24 @@ class GeminiService {
             Укажи минимум 5 объектов с высокой точностью. Если есть текст, обязательно его распознай.
             Верни ТОЛЬКО JSON без дополнительного текста.`;
 
-            // Подготовка изображения для Gemini
+            // Конвертируем изображение в base64
             const imageData = imageBuffer.toString('base64');
-            
-            // Отправка запроса
-            const result = await this.model.generateContent([
-                prompt,
-                {
-                    inlineData: {
-                        data: imageData,
-                        mimeType: mimeType
-                    }
-                }
-            ]);
 
-            const response = await result.response;
-            const text = response.text();
-            
+            // Отправка запроса с изображением
+            const response = await this.ai.models.generateContent({
+                model: this.model,
+                contents: [
+                    { text: prompt },
+                    {
+                        inlineData: {
+                            data: imageData,
+                            mimeType: mimeType
+                        }
+                    }
+                ]
+            });
+
+            const text = response.text;
             console.log('✅ Gemini analysis completed');
             
             // Парсим JSON из ответа
@@ -60,7 +65,8 @@ class GeminiService {
                 return {
                     ...analysisData,
                     rawResponse: text,
-                    timestamp: new Date().toISOString()
+                    timestamp: new Date().toISOString(),
+                    model: this.model
                 };
             } catch (parseError) {
                 console.error('❌ Failed to parse Gemini response:', parseError);
@@ -70,7 +76,8 @@ class GeminiService {
                 return {
                     description: text.substring(0, 500),
                     rawResponse: text,
-                    timestamp: new Date().toISOString()
+                    timestamp: new Date().toISOString(),
+                    model: this.model
                 };
             }
         } catch (error) {
@@ -80,7 +87,7 @@ class GeminiService {
     }
 
     // Генерация промпта на основе анализа
-    generatePrompt = async (analysis) => {
+    async generatePrompt(analysis) {
         try {
             console.log('🎨 Generating prompt from analysis...');
             
@@ -97,14 +104,17 @@ class GeminiService {
             
             Верни ТОЛЬКО промпт, без дополнительного текста.`;
 
-            const result = await this.model.generateContent(prompt);
-            const response = await result.response;
-            const generatedPrompt = response.text().trim();
-            
+            const response = await this.ai.models.generateContent({
+                model: this.model,
+                contents: prompt
+            });
+
+            const generatedPrompt = response.text.trim();
             console.log('✅ Prompt generated:', generatedPrompt.substring(0, 100) + '...');
             
             return generatedPrompt;
-        } catch (error) {
+        }
+        catch (error) {
             console.error('❌ Prompt generation error:', error);
             
             // Fallback промпт
@@ -113,7 +123,7 @@ class GeminiService {
     }
 
     // Полный анализ + генерация промпта
-    analyzeAndGeneratePrompt = async (imageBuffer, mimeType) => {
+    async analyzeAndGeneratePrompt(imageBuffer, mimeType) {
         const analysis = await this.analyzeImage(imageBuffer, mimeType);
         const prompt = await this.generatePrompt(analysis);
         
@@ -123,17 +133,78 @@ class GeminiService {
         };
     }
 
-    // Проверка API ключа
-    testConnection = async () => {
+    // Простой запрос для тестирования
+    async testConnection() {
         try {
-            const result = await this.model.generateContent('Hello, respond with "OK" if you can read this.');
-            console.log(result)
-            const response = await result.response;
-            return response.text().includes('OK');
-        } catch (error) {
+            console.log('🧪 Testing Gemini connection...');
+            
+            const response = await this.ai.models.generateContent({
+                model: this.model,
+                contents: "Respond with 'OK' if you can read this message. Just say 'OK' and nothing else."
+            });
+            
+            const text = response.text;
+            console.log('✅ Gemini response:', text);
+            
+            return text.includes('OK');
+        }
+        catch (error) {
             console.error('❌ Gemini connection test failed:', error);
             return false;
         }
+    }
+
+    // Распознавание текста на изображении (OCR)
+    async extractText(imageBuffer, mimeType) {
+        try {
+            console.log('📝 Extracting text from image...');
+            
+            const prompt = `Extract and transcribe ALL text visible in this image. 
+            Return ONLY the extracted text, nothing else. If there is no text, return "NO_TEXT_FOUND".`;
+
+            const imageData = imageBuffer.toString('base64');
+
+            const response = await this.ai.models.generateContent({
+                model: this.model,
+                contents: [
+                    { text: prompt },
+                    {
+                        inlineData: {
+                            data: imageData,
+                            mimeType: mimeType
+                        }
+                    }
+                ]
+            });
+
+            const text = response.text;
+            console.log('✅ Text extraction completed');
+            
+            return {
+                text: text === 'NO_TEXT_FOUND' ? null : text,
+                success: text !== 'NO_TEXT_FOUND'
+            };
+        } catch (error) {
+            console.error('❌ Text extraction error:', error);
+            return {
+                text: null,
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
+    // Получение информации о модели
+    async getModelInfo() {
+        return {
+            model: this.model,
+            capabilities: {
+                vision: true,
+                text: true,
+                multimodal: true
+            },
+            apiKey: process.env.GEMINI_API_KEY ? '✓ Set' : '✗ Not set'
+        };
     }
 }
 
