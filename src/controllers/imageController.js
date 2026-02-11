@@ -30,7 +30,7 @@ class ImageController {
     // Анализ изображения
     analyze = async (req, res, next) => {
         try {
-            const userId = req.user.id;
+            const userId = 1;
             
             // Файл уже доступен в req.file благодаря middleware в роутере
             if (!req.file) {
