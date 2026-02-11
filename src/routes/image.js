@@ -58,4 +58,6 @@ router.delete('/:filename', imageController.delete);
 // Тестовый маршрут для Gemini
 router.get('/test/gemini', imageController.testGemini);
 
+router.post('/process', upload.single('image'), imageController.process);
+
 module.exports = router;
