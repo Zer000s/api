@@ -1,6 +1,7 @@
 const db = require('../models/models');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
+const { Op } = require('sequelize');
 
 class SessionService {
   async createSession(userId, tokenData, userAgent = null, ipAddress = null) {
@@ -25,7 +26,7 @@ class SessionService {
       where: {
         token,
         revoked_at: null,
-        expires_at: { [db.Sequelize.Op.gt]: new Date() }
+        expires_at: { [Op.gt]: new Date() }
       },
       include: [{
         model: db.User,
@@ -64,7 +65,7 @@ class SessionService {
     };
 
     if (excludeToken) {
-      where.token = { [db.Sequelize.Op.ne]: excludeToken };
+      where.token = { [Op.ne]: excludeToken };
     }
 
     await db.Session.update(
@@ -80,7 +81,7 @@ class SessionService {
       where: { 
         user_id: userId,
         revoked_at: null,
-        expires_at: { [db.Sequelize.Op.gt]: new Date() }
+        expires_at: { [Op.gt]: new Date() }
       },
       order: [['last_used_at', 'DESC']]
     });
@@ -134,9 +135,9 @@ class SessionService {
   async cleanupExpiredSessions() {
     const result = await db.Session.destroy({
       where: {
-        [db.Sequelize.Op.or]: [
-          { expires_at: { [db.Sequelize.Op.lt]: new Date() } },
-          { revoked_at: { [db.Sequelize.Op.ne]: null } }
+        [Op.or]: [
+          { expires_at: { [Op.lt]: new Date() } },
+          { revoked_at: { [Op.ne]: null } }
         ]
       }
     });

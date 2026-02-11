@@ -6,10 +6,28 @@ const sessionService = require('../services/sessionService');
 
 class AuthController {
   constructor() {
-    this.client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET, process.env.GOOGLE_CALLBACK_URL);
+    this.client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
   }
 
-  google = async (req, res, next) =>{
+  generateToken = (user, expiresIn = null) => {
+    return jwt.sign(
+      {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        picture: user.picture
+      },
+      process.env.JWT_SECRET,
+      { 
+        expiresIn: expiresIn || process.env.JWT_EXPIRE || '7d',
+        issuer: 'image-generator-api',
+        jwtid: uuidv4()
+      }
+    );
+  }
+
+  google = async (req, res, next) => {
     try {
       const redirectUrl = this.client.generateAuthUrl({
         access_type: 'offline',
@@ -69,20 +87,8 @@ class AuthController {
       const { user: dbUser } = await userService.findOrCreateByGoogle(payload);
 
       // Создаем JWT токен
-      const token = jwt.sign(
-        {
-          id: dbUser.id,
-          email: dbUser.email,
-          name: dbUser.name,
-          role: dbUser.role
-        },
-        process.env.JWT_SECRET,
-        { 
-          expiresIn: process.env.JWT_EXPIRE || '7d',
-          issuer: 'image-generator-api',
-          jwtid: uuidv4()
-        }
-      );
+      const token = this.generateToken(dbUser);
+      const refreshToken = uuidv4();
 
       // Создаем сессию в БД
       const userAgent = req.get('User-Agent');
@@ -90,12 +96,12 @@ class AuthController {
       
       await sessionService.createSession(dbUser.id, {
         token,
-        refreshToken: uuidv4()
+        refreshToken
       }, userAgent, ipAddress);
 
       // Редирект на фронт с токеном
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-      res.redirect(`${frontendUrl}/auth/callback?token=${encodeURIComponent(token)}`);
+      res.redirect(`${frontendUrl}/auth/callback?token=${encodeURIComponent(token)}&refreshToken=${encodeURIComponent(refreshToken)}`);
 
     } catch (error) {
       console.error('Auth callback error:', error.message);
@@ -134,21 +140,7 @@ class AuthController {
       const { user: dbUser } = await userService.findOrCreateByGoogle(payload);
 
       // Создаем JWT токен
-      const token = jwt.sign(
-        {
-          id: dbUser.id,
-          email: dbUser.email,
-          name: dbUser.name,
-          role: dbUser.role
-        },
-        process.env.JWT_SECRET,
-        { 
-          expiresIn: process.env.JWT_EXPIRE || '7d',
-          issuer: 'image-generator-api',
-          jwtid: uuidv4()
-        }
-      );
-
+      const token = this.generateToken(dbUser);
       const refreshToken = uuidv4();
 
       // Создаем сессию в БД
@@ -194,36 +186,41 @@ class AuthController {
       
       res.status(statusCode).json({
         success: false,
-        error: errorMessage
+        error: errorMessage,
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
   }
 
   refresh = async (req, res, next) => {
     try {
-      const { refreshToken } = req.body;
+      const { refreshToken: oldRefreshToken } = req.body;
       
-      if (!refreshToken) {
+      if (!oldRefreshToken) {
         return res.status(400).json({
           success: false,
           error: 'Refresh token is required'
         });
       }
 
-      // Обновляем токен через сервис сессий
-      const newToken = jwt.sign(
-        { id: req.user.id },
-        process.env.JWT_SECRET,
-        { 
-          expiresIn: '15m',
-          issuer: 'image-generator-api',
-          jwtid: uuidv4()
-        }
-      );
+      // Получаем пользователя из существующего токена или сессии
+      const user = await userService.findById(req.user.id);
+      
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          error: 'User not found'
+        });
+      }
 
-      const newSession = await sessionService.refreshToken(refreshToken, {
+      // Создаем новый токен с полной информацией о пользователе
+      const newToken = this.generateToken(user, '15m');
+      const newRefreshToken = uuidv4();
+
+      // Обновляем сессию в БД
+      const newSession = await sessionService.refreshToken(oldRefreshToken, {
         token: newToken,
-        refreshToken: uuidv4()
+        refreshToken: newRefreshToken
       });
 
       res.json({
@@ -231,7 +228,14 @@ class AuthController {
         data: {
           token: newToken,
           refreshToken: newSession.refresh_token,
-          expiresIn: 15 * 60 * 1000 // 15 минут
+          expiresIn: 15 * 60 * 1000, // 15 минут
+          user: {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            picture: user.picture,
+            role: user.role
+          }
         },
         metadata: {
           timestamp: new Date().toISOString()
@@ -242,7 +246,8 @@ class AuthController {
       console.error('Refresh token error:', error);
       res.status(401).json({
         success: false,
-        error: 'Failed to refresh token'
+        error: 'Failed to refresh token',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
   }
@@ -269,18 +274,35 @@ class AuthController {
         });
       }
 
-      // Верифицируем JWT
+      // Верифицируем JWT и получаем полную информацию
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+      // Получаем актуальные данные пользователя из БД
+      const user = await userService.findById(decoded.id);
+      if (!user) {
+        return res.status(401).json({ 
+          success: false,
+          error: 'User not found' 
+        });
+      }
+
+      // Проверяем, что пользовательские данные совпадают
+      if (user.email !== decoded.email || user.role !== decoded.role) {
+        console.warn(`Token payload mismatch for user ${user.id}`);
+        // В этом случае можно обновить токен или просто предупредить
+      }
 
       res.json({
         success: true,
         data: {
           valid: true,
           user: {
-            id: decoded.id,
-            email: decoded.email,
-            name: decoded.name,
-            role: decoded.role
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            picture: user.picture,
+            role: user.role,
+            credits: user.credits
           },
           session: {
             id: session.id,
@@ -385,6 +407,51 @@ class AuthController {
         },
         metadata: {
           timestamp: new Date().toISOString()
+        }
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Метод для дебага
+  debug = async (req, res, next) => {
+    try {
+      const token = req.query.token || req.header('Authorization')?.replace('Bearer ', '');
+      
+      if (!token) {
+        return res.json({
+          success: false,
+          error: 'No token provided'
+        });
+      }
+
+      let decoded;
+      try {
+        decoded = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
+      } catch (error) {
+        return res.json({
+          success: false,
+          error: 'Invalid token',
+          details: error.message
+        });
+      }
+
+      const session = await sessionService.validateSession(token);
+
+      res.json({
+        success: true,
+        data: {
+          token: {
+            decoded,
+            raw: token.substring(0, 50) + '...'
+          },
+          session: session || null,
+          env: {
+            JWT_SECRET_SET: !!process.env.JWT_SECRET,
+            JWT_EXPIRE: process.env.JWT_EXPIRE || 'default'
+          }
         }
       });
 
