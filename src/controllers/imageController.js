@@ -1,7 +1,8 @@
 const imageService = require('../services/imageService');
-const nanoBananoService = require('../services/nanoBananoService');
+const deApiService = require('../services/deApiService');
 const geminiService = require('../services/geminiService');
 const fs = require('fs')
+const { Image, Generation } = require('../models/models');
 
 class ImageController {
     // Получение всех изображений пользователя
@@ -26,44 +27,6 @@ class ImageController {
                 }
             });
         } catch (error) {
-            next(error);
-        }
-    }
-
-    // Анализ изображения
-    analyze = async (req, res, next) => {
-        try {
-            const userId = req.user.id;
-            
-            // Файл уже доступен в req.file благодаря middleware в роутере
-            if (!req.file) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'No file uploaded'
-                });
-            }
-
-            // Анализируем изображение
-            const result = await imageService.analyzeImage(req.file, userId);
-
-            res.json({
-                success: true,
-                data: {
-                    image: result.image,
-                    analysis: result.analysis,
-                    prompt: result.prompt
-                },
-                metadata: {
-                    timestamp: new Date().toISOString(),
-                    userId,
-                    model: 'gemini-1.5-flash'
-                }
-            });
-        } catch (error) {
-            // Удаляем файл при ошибке
-            if (req.file && req.file.path && require('fs').existsSync(req.file.path)) {
-                require('fs').unlinkSync(req.file.path);
-            }
             next(error);
         }
     }
@@ -155,6 +118,143 @@ class ImageController {
         }
     }
 
+    // Анализ изображения
+    analyze = async (req, res, next) => {
+        try {
+            const userId = req.user.id;
+            
+            // Файл уже доступен в req.file благодаря middleware в роутере
+            if (!req.file) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'No file uploaded'
+                });
+            }
+
+            // Анализируем изображение
+            const result = await imageService.analyzeImage(req.file, userId);
+
+            res.json({
+                success: true,
+                data: {
+                    image: result.image,
+                    analysis: result.analysis,
+                    prompt: result.prompt
+                },
+                metadata: {
+                    timestamp: new Date().toISOString(),
+                    userId,
+                    model: 'gemini-1.5-flash'
+                }
+            });
+        } catch (error) {
+            // Удаляем файл при ошибке
+            if (req.file && req.file.path && require('fs').existsSync(req.file.path)) {
+                require('fs').unlinkSync(req.file.path);
+            }
+            next(error);
+        }
+    }
+
+    process = async (req, res, next) => {
+        try {
+            const userId = req.user.id;
+            
+            // Файл уже доступен в req.file благодаря middleware в роутере
+            if (!req.file) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'No file uploaded'
+                });
+            }
+
+            const file = req.file;
+
+            // Анализируем изображение
+            // const result = await imageService.analyzeImage(file, userId);
+
+            const prompt = "Кот в шубе";
+            const analysis = {};
+
+            const generationResult = await deApiService.img2img(file.path, prompt, {
+                model: process.env.DEAPI_MODEL,
+                seed: Math.floor(Math.random() * 1000000),
+                negative_prompt: 'blurry, low quality, distorted, ugly, bad anatomy'
+            });
+
+            // 4. Сохраняем оригинальное изображение
+            const originalImage = await Image.create({
+                user_id: userId,
+                filename: file.filename,
+                original_filename: file.originalname,
+                file_path: file.path,
+                file_size: file.size,
+                mime_type: file.mimetype,
+                type: 'original',
+                analysis_data: analysis,
+                prompt: prompt,
+                metadata: {
+                    style: "ven",
+                    processedAt: new Date().toISOString()
+                }
+            });
+
+            // 4. Сохраняем запись о генерации изображения
+            const generateImage = await Generation.create({
+                user_id: userId,
+                image_id: originalImage.id,
+                prompt: prompt,
+                parameters: { request_id: generationResult.request_id }
+            });
+
+            res.json({
+                success: true,
+                original: {
+                    id: originalImage.id,
+                    url: `/uploads/${originalImage.filename}`,
+                    analysis: analysis
+                },
+                generated: {
+                    id: generateImage.id,
+                    request_id: generationResult.request_id
+                }
+            });
+        }
+        catch (error) {
+            if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+                fs.unlinkSync(req.file.path);
+            }
+            next(error);
+        }
+    }
+
+    getGenerationStatus = async (req, res, next) => {
+        try {
+            const { requestId } = req.params;
+
+            const userId = req.user.id;
+
+            if (!requestId) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'requestId is required'
+                });
+            }
+
+            const statusData = await deApiService.getRequestStatus(requestId, userId);
+
+            res.json({
+                success: true,
+                data: statusData,
+                metadata: {
+                    timestamp: new Date().toISOString()
+                }
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
     // Тестирование Gemini подключения
     testGemini = async (req, res, next) => {
         try {
@@ -169,105 +269,6 @@ class ImageController {
                 }
             });
         } catch (error) {
-            next(error);
-        }
-    }
-
-    process = async (req, res, next) => {
-        try {
-            const userId = 1;
-            
-            // 1. Multer уже положил файл в req.file (middleware в роутере)
-            if (!req.file) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'No image file provided'
-                });
-            }
-
-            console.log(`🔄 Starting PROCESS pipeline for user ${userId}`);
-            const startTime = Date.now();
-
-            // 2. Читаем файл
-            const imageBuffer = fs.readFileSync(req.file.path);
-
-            // 4. ГЕНЕРАЦИЯ ФИРМЕННОГО ПРОМПТА (Венецианский стиль)
-            console.log('🎨 Step 1/2: Generating Venetian-style prompt...');
-            // Можно передать дополнительный промпт от пользователя из body
-
-            const result = await nanoBananoService.processWithStyle(
-                imageBuffer,
-                geminiService,
-                null,
-                'venetian' // стиль по умолчанию
-            );
-
-            // 5. СОХРАНЕНИЕ результата
-            console.log('💾 Step 2/2: Saving result...');
-            
-            // Генерируем имя файла
-            const outputFilename = `processed-${Date.now()}-${userId}.png`;
-            const outputPath = `./uploads/${outputFilename}`;
-            
-            // Сохраняем на диск
-            fs.writeFileSync(outputPath, result.imageBuffer);
-
-            // Сохраняем в БД
-            const imageRecord = await Image.create({
-                user_id: userId,
-                filename: outputFilename,
-                original_filename: req.file.originalname,
-                file_path: outputPath,
-                file_size: result.imageBuffer.length,
-                mime_type: 'image/png',
-                type: 'processed',
-                analysis_data: result.analysis,
-                prompt: result.originalPrompt,
-                metadata: {
-                    pipeline: 'venetian-style',
-                    processingTimeMs: Date.now() - startTime,
-                    originalFile: req.file.filename
-                }
-            });
-
-            // 6. Опционально: удаляем оригинальный загруженный файл
-            // fs.unlinkSync(req.file.path);
-
-            // 7. ОТВЕТ
-            res.json({
-                success: true,
-                data: {
-                    image: {
-                        id: imageRecord.id,
-                        url: `/uploads/${outputFilename}`,
-                        filename: outputFilename,
-                        size: imageRecord.file_size,
-                    },
-                    analysis: {
-                        labels: result.analysis.labels?.slice(0, 10),
-                        description: result.analysis.description,
-                        mood: result.analysis.mood,
-                        objects: result.analysis.objects,
-                    },
-                    prompt: result.originalPrompt,
-                    processingTime: `${Date.now() - startTime}ms`,
-                },
-                metadata: {
-                    timestamp: new Date().toISOString(),
-                    userId,
-                    model: 'nano-banana-gemini-2.5-flash',
-                    style: 'venetian-renaissance'
-                }
-            });
-
-        } catch (error) {
-            console.error('❌ Process pipeline error:', error);
-            
-            // Cleanup: удаляем загруженный файл при ошибке
-            if (req.file && req.file.path && fs.existsSync(req.file.path)) {
-                fs.unlinkSync(req.file.path);
-            }
-            
             next(error);
         }
     }

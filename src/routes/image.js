@@ -49,15 +49,17 @@ router.get('/stats', imageController.getUserStats);
 // Получить информацию о конкретном изображении
 router.get('/:filename', imageController.getImageInfo);
 
-// Загрузка и анализ изображения
-router.post('/analyze', upload.single('image'), imageController.analyze);
-
 // Удаление изображения
 router.delete('/:filename', imageController.delete);
 
 // Тестовый маршрут для Gemini
 router.get('/test/gemini', imageController.testGemini);
 
+// Загрузка и анализ изображения
+router.post('/analyze', upload.single('image'), imageController.analyze);
+
 router.post('/process', upload.single('image'), imageController.process);
+
+router.get('/generation-status/:requestId', imageController.getGenerationStatus);
 
 module.exports = router;

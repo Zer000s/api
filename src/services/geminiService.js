@@ -154,46 +154,6 @@ class GeminiService {
         }
     }
 
-    // Распознавание текста на изображении (OCR)
-    async extractText(imageBuffer, mimeType) {
-        try {
-            console.log('📝 Extracting text from image...');
-            
-            const prompt = `Extract and transcribe ALL text visible in this image. 
-            Return ONLY the extracted text, nothing else. If there is no text, return "NO_TEXT_FOUND".`;
-
-            const imageData = imageBuffer.toString('base64');
-
-            const response = await this.ai.models.generateContent({
-                model: this.model,
-                contents: [
-                    { text: prompt },
-                    {
-                        inlineData: {
-                            data: imageData,
-                            mimeType: mimeType
-                        }
-                    }
-                ]
-            });
-
-            const text = response.text;
-            console.log('✅ Text extraction completed');
-            
-            return {
-                text: text === 'NO_TEXT_FOUND' ? null : text,
-                success: text !== 'NO_TEXT_FOUND'
-            };
-        } catch (error) {
-            console.error('❌ Text extraction error:', error);
-            return {
-                text: null,
-                success: false,
-                error: error.message
-            };
-        }
-    }
-
     // Получение информации о модели
     async getModelInfo() {
         return {
