@@ -3,30 +3,70 @@ const deApiService = require('../services/deApiService');
 const geminiService = require('../services/geminiService');
 const fs = require('fs')
 const { Image, Generation } = require('../models/models');
+const { Sequelize } = require('sequelize'); // ВАЖНО: импортируем Sequelize
+const sequelize = require('../config/database'); // Импортируем экземпляр sequelize
 
 class ImageController {
     // Получение всех изображений пользователя
     getUserImages = async (req, res, next) => {
         try {
             const userId = req.user.id;
-            const { page, limit, type } = req.query;
+            const { page = 1, limit = 20 } = req.query;
+            const offset = (page - 1) * limit;
 
-            const result = await imageService.getUserImages(userId, {
-                page: parseInt(page) || 1,
-                limit: parseInt(limit) || 20,
-                type
-            });
+            const query = `
+            SELECT 
+                i.id, 
+                i.user_id, 
+                i.file_path, 
+                i.type,
+                i.filename,
+                i."createdAt",
+                g.id as gen_id, 
+                g.status, 
+                g.generated_filename,
+                g.parameters,
+                g.error_message,
+                g."createdAt" as generation_created_at
+            FROM generations g
+            INNER JOIN images i ON i.id = g.image_id
+            WHERE i.user_id = $1
+            ORDER BY g."createdAt" DESC
+            LIMIT $2 OFFSET $3
+            `;
+
+            const countQuery = `
+            SELECT COUNT(*) as total
+            FROM generations g
+            INNER JOIN images i ON i.id = g.image_id
+            WHERE i.user_id = $1
+            `;
+
+            const [generations, countResult] = await Promise.all([
+            sequelize.query(query, {
+                bind: [userId, parseInt(limit), parseInt(offset)],
+                type: sequelize.QueryTypes.SELECT
+            }),
+            sequelize.query(countQuery, {
+                bind: [userId],
+                type: sequelize.QueryTypes.SELECT
+            })
+            ]);
+
+            const total = parseInt(countResult[0].total);
 
             res.json({
-                success: true,
-                data: result.images,
-                pagination: result.pagination,
-                metadata: {
-                    timestamp: new Date().toISOString(),
-                    userId
-                }
+            success: true,
+            data: generations,
+            pagination: {
+                total,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                totalPages: Math.ceil(total / limit)
+            }
             });
-        } catch (error) {
+        }
+        catch (error) {
             next(error);
         }
     }
@@ -173,13 +213,13 @@ class ImageController {
             // Анализируем изображение
             // const result = await imageService.analyzeImage(file, userId);
 
-            const prompt = "Кот в шубе";
+            const prompt = "Transform the animal in the image into a classical aristocratic oil portrait from the 17th–18th century. Preserve maximum likeness to the original animal: exact facial features, eye shape, muzzle proportions, fur pattern, color distribution, and overall identity must remain unchanged. Strictly preserve the original pose, body position, silhouette, proportions, scale, and head orientation from the source image. Do not alter anatomy or posture. The animal is resting on an elegant classical cushion, fully consistent with the old master aesthetic. The cushion is made of rich velvet fabric in deep warm tones (burgundy, dark brown, muted gold), with subtle embroidery and soft folds, naturally supporting the animal without changing its pose. Classical old European masters painting style, very rich oil paint texture with highly visible, layered, and directional brushstrokes, traditional canvas surface. Soft dramatic chiaroscuro lighting, dark atmospheric background. Luxurious velvet cloak with fur trim and refined gold jewelry. Bold, tactile oil strokes across the cushion, garments, and background, pronounced impasto highlights, expressive yet controlled painterly technique. High detail in fur, fabric, cushion texture, and metal, museum-quality fine art, vintage color grading, regal ceremonial portrait atmosphere.";
             const analysis = {};
 
             const generationResult = await deApiService.img2img(file.path, prompt, {
                 model: process.env.DEAPI_MODEL,
                 seed: Math.floor(Math.random() * 1000000),
-                negative_prompt: 'blurry, low quality, distorted, ugly, bad anatomy'
+                negative_prompt: "change of pose, altered anatomy, loss of likeness, floating subject, incorrect body support, human features, cartoon, anime, modern objects, photographic realism, smooth digital painting, flat lighting, neon colors, CGI, 3D, plastic texture, oversmoothing, identity drift, text, watermarks"
             });
 
             // 4. Сохраняем оригинальное изображение

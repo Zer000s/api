@@ -2,6 +2,7 @@ const axios = require('axios');
 const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
+const sharp = require("sharp");
 const { Generation } = require('../models/models');
 
 class DeApiService {
@@ -29,7 +30,7 @@ class DeApiService {
             formData.append('prompt', prompt);
             formData.append('model', options.model || this.model);
             formData.append('seed', options.seed || Math.floor(Math.random() * 1000000));
-            formData.append('steps', 2);
+            formData.append('steps', 20);
             
             // Добавляем негативный промпт если есть
             if (options.negative_prompt) {
@@ -89,9 +90,26 @@ class DeApiService {
                 const generatedFilename = `processed-${Date.now()}-${userId}.png`;
                 const uploadDir = process.env.UPLOAD_DIR;
                 const generatedPath = path.join(uploadDir, generatedFilename);
-                
-                // 👇 СОХРАНЯЕМ ФАЙЛ
-                fs.writeFileSync(generatedPath, Buffer.from(imageResponse.data));
+  
+                const image = sharp(imageResponse.data);
+                const metadata = await image.metadata();
+
+                const svg = this.createWatermarkSVG(metadata.width, metadata.height);
+                const svgBuffer = Buffer.from(svg);
+
+                // накладываем watermark
+                const outputBuffer = await image
+                    .composite([
+                    {
+                        input: svgBuffer,
+                        top: 0,
+                        left: 0,
+                    },
+                    ])
+                    .png()
+                    .toBuffer();
+
+                fs.writeFileSync(generatedPath, outputBuffer);
                 
                 console.log(`✅ Image saved: ${generatedFilename}`);
                 
@@ -141,6 +159,34 @@ class DeApiService {
             console.error('❌ deApi connection test failed:', error.message);
             return { success: false, error: error.message };
         }
+    }
+
+    createWatermarkSVG = (width, height, text = "AI Generator") => {
+        const fontSize = Math.floor(width / 18); // масштабируется от размера картинки
+        const opacity = 0.3; // прозрачность (очень важно для видимости изображения)
+
+        return Buffer.from(`
+            <svg width="${width}" height="${height}">
+            <defs>
+                <pattern id="pattern" 
+                        patternUnits="userSpaceOnUse" 
+                        width="400" height="200"
+                        patternTransform="rotate(-30)">
+
+                <text x="0" y="150"
+                        font-size="${fontSize}"
+                        font-family="Arial, sans-serif"
+                        fill="white"
+                        fill-opacity="${opacity}">
+                    ${text}
+                </text>
+
+                </pattern>
+            </defs>
+
+            <rect width="100%" height="100%" fill="url(#pattern)" />
+            </svg>
+        `);
     }
 }
 

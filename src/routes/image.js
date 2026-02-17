@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const imageController = require('../controllers/imageController');
+const { authMiddleware } = require('../middleware/auth.middleware');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -39,6 +40,8 @@ const upload = multer({
         }
     }
 });
+
+router.use(authMiddleware);
 
 // Получить все изображения пользователя
 router.get('/', imageController.getUserImages);

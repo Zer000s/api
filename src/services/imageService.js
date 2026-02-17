@@ -3,6 +3,8 @@ const path = require('path');
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const geminiService = require('./geminiService');
+const { Sequelize } = require('sequelize'); // ВАЖНО: импортируем Sequelize
+const sequelize = require('../config/database'); // Импортируем экземпляр sequelize
 const { User, Image, Generation } = require('../models/models');
 
 class ImageService {
@@ -62,7 +64,7 @@ class ImageService {
 
             const { count, rows } = await Image.findAndCountAll({
                 where,
-                order: [['created_at', 'DESC']],
+                order: [['createdAt', 'DESC']],
                 limit,
                 offset
             });
@@ -77,7 +79,7 @@ class ImageService {
                     mimeType: img.mime_type,
                     analysis: img.analysis_data,
                     prompt: img.prompt,
-                    createdAt: img.created_at,
+                    createdAt: img.createdAt,
                     isPublic: img.is_public
                 })),
                 pagination: {
@@ -239,40 +241,32 @@ class ImageService {
         });
     }
 
-    // Получение статистики пользователя
     getUserStats = async (userId) => {
         try {
-            const stats = await Image.findAll({
+            const total = await Generation.count({
                 where: {
-                    user_id: userId,
-                    is_deleted: false
-                },
-                attributes: [
-                    'type',
-                    [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
-                    [sequelize.fn('SUM', sequelize.col('file_size')), 'total_size']
-                ],
-                group: ['type']
-            });
-
-            const total = await Image.count({
-                where: {
-                    user_id: userId,
-                    is_deleted: false
+                    user_id: userId
                 }
             });
 
+            const completed = await Generation.count({
+                where: {
+                    user_id: userId,
+                    status: 'completed'
+                }
+            });
+
+            const success_rate = total > 0 ? (completed / total) * 100 : 0;
+
             return {
                 total_images: total,
-                by_type: stats,
-                total_size: stats.reduce((sum, stat) => sum + (parseInt(stat.dataValues.total_size) || 0), 0)
+                success_rate: success_rate.toFixed(2) // округляем до 2 знаков
             };
-        }
-        catch (error) {
+        } catch (error) {
             console.error('Error getting user stats:', error);
             throw error;
         }
-    }
+    };
 }
 
 module.exports = new ImageService();

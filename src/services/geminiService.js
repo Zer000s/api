@@ -94,7 +94,7 @@ class GeminiService {
             const prompt = `На основе этого анализа изображения создай промпт для нейросети:
             ${JSON.stringify(analysis, null, 2)}
             
-            Создай промпт на английском языке для генерации креативной версии этого изображения.
+            Создай промпт на английском языке для генерации одежды в венецианском стиле 18 века на главном объекте изображения.
             Промпт должен быть подробным, включать:
             - Основные объекты и их описание
             - Стиль (digital art, painting, photo, etc.)
@@ -124,7 +124,7 @@ class GeminiService {
 
     // Полный анализ + генерация промпта
     async analyzeAndGeneratePrompt(imageBuffer, mimeType) {
-        const analysis = await this.analyzeImage(imageBuffer, mimeType);
+        const analysis = {}
         const prompt = await this.generatePrompt(analysis);
         
         return {
