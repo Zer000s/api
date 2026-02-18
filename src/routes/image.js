@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const imageController = require('../controllers/imageController');
-const { authMiddleware } = require('../middleware/auth.middleware');
+const { userIdentifierMiddleware } = require('../middleware/userIdentifier.middleware');
+const rateLimits = require('../middleware/rateLimit.middleware');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -17,6 +18,7 @@ const storage = multer.diskStorage({
     },
     filename: (req, file, cb) => {
         const uniqueSuffix = uuidv4();
+        // Используем userId из middleware
         const userId = req.user?.id || 'anonymous';
         const sanitizedUserId = userId.replace(/[^a-zA-Z0-9]/g, '-');
         cb(null, `${sanitizedUserId}-${uniqueSuffix}${path.extname(file.originalname)}`);
@@ -41,28 +43,25 @@ const upload = multer({
     }
 });
 
-router.use(authMiddleware);
+// Применяем middleware идентификации пользователя ко всем роутам
+router.use(userIdentifierMiddleware);
 
-// Получить все изображения пользователя
-router.get('/', imageController.getUserImages);
+// Применяем rate limiting к конкретным маршрутам
+router.post('/process', 
+    rateLimits.upload,
+    upload.single('image'), 
+    imageController.process
+);
 
-// Получить статистику пользователя
-router.get('/stats', imageController.getUserStats);
+router.get('/generation-status/:requestId',
+    rateLimits.status,
+    imageController.getGenerationStatus
+);
 
-// Получить информацию о конкретном изображении
-router.get('/:filename', imageController.getImageInfo);
-
-// Удаление изображения
-router.delete('/:filename', imageController.delete);
-
-// Тестовый маршрут для Gemini
-router.get('/test/gemini', imageController.testGemini);
-
-// Загрузка и анализ изображения
-router.post('/analyze', upload.single('image'), imageController.analyze);
-
-router.post('/process', upload.single('image'), imageController.process);
-
-router.get('/generation-status/:requestId', imageController.getGenerationStatus);
+// Остальные маршруты с общим лимитом
+router.get('/', rateLimits.api, imageController.getUserImages);
+router.get('/stats', rateLimits.api, imageController.getUserStats);
+router.get('/:filename', rateLimits.api, imageController.getImageInfo);
+router.delete('/:filename', rateLimits.api, imageController.delete);
 
 module.exports = router;
