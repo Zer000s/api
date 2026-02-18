@@ -24,6 +24,9 @@ app.use(morgan('dev'));
 
 app.use(cookieParser());
 
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 app.use('/uploads', (req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Methods", "GET");
@@ -35,10 +38,6 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // роуты (multer работает здесь)
 app.use('/api', routes);
-
-// body parsers после роутов upload — безопаснее
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
 app.use(errorHandler);
 

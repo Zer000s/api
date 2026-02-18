@@ -87,7 +87,7 @@ class DeApiService {
                 });
                 
                 // Генерируем имя файла
-                const generatedFilename = `processed-${Date.now()}-${userId}.png`;
+                const generatedFilename = `processed-${Date.now()}-${anonymousId}.png`;
                 const uploadDir = process.env.UPLOAD_DIR;
                 const generatedPath = path.join(uploadDir, generatedFilename);
   

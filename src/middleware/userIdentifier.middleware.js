@@ -7,8 +7,10 @@ const sequelize = require('../config/database'); // Импортируем эк�
 const userIdentifierMiddleware = async (req, res, next) => {
     try {
         // Пытаемся получить идентификатор из cookie или заголовка
-        let anonymousId = req.cookies?.anonymousId || req.headers['x-anonymous-id'];
-        
+        let anonymousId = req.cookies.anonymousId;
+
+        console.log(anonymousId)
+
         // Получаем IP и User-Agent
         const ipAddress = req.ip || req.connection.remoteAddress;
         const userAgent = req.get('User-Agent');
