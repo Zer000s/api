@@ -3,7 +3,7 @@ const {DataTypes} = require('sequelize')
 
 const Generation = sequelize.define('generation', {
     id: {type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true},
-    user_id: {type: DataTypes.UUID,allowNull: false, references: {model: 'users',key: 'id'}},
+    anonymous_id: {type: DataTypes.UUID,allowNull: false, references: {model: 'anonymous_sessions',key: 'anonymous_id'}},
     image_id: {type: DataTypes.UUID, allowNull: true, references: {model: 'images', key: 'id'}},
     prompt: {type: DataTypes.TEXT, allowNull: false},
     negative_prompt: {type: DataTypes.TEXT, allowNull: true},
@@ -19,7 +19,7 @@ const Generation = sequelize.define('generation', {
 
 const Image = sequelize.define('image', {
     id: {type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true},
-    user_id: {type: DataTypes.UUID, allowNull: false, references: {model: 'users', key: 'id'}},
+    anonymous_id: {type: DataTypes.UUID, allowNull: false, references: {model: 'anonymous_sessions', key: 'anonymous_id'}},
     filename: {type: DataTypes.STRING, allowNull: false},
     original_filename: {type: DataTypes.STRING, allowNull: true},
     file_path: {type: DataTypes.STRING, allowNull: false},
@@ -32,58 +32,35 @@ const Image = sequelize.define('image', {
     is_public: {type: DataTypes.BOOLEAN, defaultValue: false},
     views_count: {type: DataTypes.INTEGER, defaultValue: 0},
     likes_count: {type: DataTypes.INTEGER, defaultValue: 0},
-    is_deleted: {type: DataTypes.BOOLEAN, defaultValue: false},
-    deleted_at: {type: DataTypes.DATE, allowNull: true}
+    is_deleted: {type: DataTypes.BOOLEAN, defaultValue: false}
 });
 
-const User = sequelize.define('user', {
-    id: {type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true},
-    google_id: {type: DataTypes.STRING, unique: true, allowNull: false},
-    email: {type: DataTypes.STRING, unique: true, allowNull: false, validate: {isEmail: true}},
-    name: {type: DataTypes.STRING, allowNull: false},
-    picture: {type: DataTypes.STRING, allowNull: true},
-    email_verified: {type: DataTypes.BOOLEAN, defaultValue: false},
-    role: {type: DataTypes.ENUM('user', 'admin', 'moderator'), defaultValue: 'user'},
-    credits: {type: DataTypes.INTEGER, defaultValue: 100, validate: {min: 0}},
-    settings: {type: DataTypes.JSONB, defaultValue: {notifications: true, theme: 'light', language: 'en'}},
-    last_login_at: {type: DataTypes.DATE, allowNull: true},
-    is_active: {type: DataTypes.BOOLEAN, defaultValue: true},
-    banned_until: {type: DataTypes.DATE, allowNull: true}
+// Добавим модель для анонимных сессий
+const AnonymousSession = sequelize.define('anonymous_session', {
+    id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+    anonymous_id: { type: DataTypes.UUID, allowNull: false, unique: true },
+    ip_address: { type: DataTypes.STRING(45), allowNull: true },
+    user_agent: { type: DataTypes.TEXT, allowNull: true },
+    last_activity: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
+    request_count: { type: DataTypes.INTEGER, defaultValue: 0 },
+    expires_at: { type: DataTypes.DATE, allowNull: true }
 });
 
-const Session = sequelize.define('session', {
-    id: {type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true},
-    user_id: {type: DataTypes.UUID, allowNull: false, references: {model: 'users', key: 'id'}},
-    token: {type: DataTypes.TEXT, allowNull: false, unique: true},
-    refresh_token: {type: DataTypes.TEXT, allowNull: true, unique: true},
-    user_agent: {type: DataTypes.TEXT, allowNull: true},
-    ip_address: {type: DataTypes.STRING(45), allowNull: true},
-    expires_at: {type: DataTypes.DATE, allowNull: false},
-    revoked_at: {type: DataTypes.DATE, allowNull: true},
-    last_used_at: {type: DataTypes.DATE, allowNull: true}
+// Связи для анонимных пользователей (опционально)
+AnonymousSession.hasMany(Image, {
+    foreignKey: 'anonymous_id',
+    constraints: false,
+    scope: {
+        anonymous_id: sequelize.col('anonymous_session.anonymous_id')
+    }
 });
 
-User.hasMany(Image, {
-    foreignKey: 'user_id',
-    as: 'images',
-    onDelete: 'CASCADE'
-});
-
-User.hasMany(Generation, {
-    foreignKey: 'user_id',
-    as: 'generations',
-    onDelete: 'CASCADE'
-});
-
-User.hasMany(Session, {
-    foreignKey: 'user_id',
-    as: 'sessions',
-    onDelete: 'CASCADE'
-});
-
-Image.belongsTo(User, {
-    foreignKey: 'user_id',
-    as: 'user'
+AnonymousSession.hasMany(Generation, {
+    foreignKey: 'anonymous_id',
+    constraints: false,
+    scope: {
+        anonymous_id: sequelize.col('anonymous_session.anonymous_id')
+    }
 });
 
 Image.hasMany(Generation, {
@@ -91,24 +68,13 @@ Image.hasMany(Generation, {
     as: 'generations'
 });
 
-Generation.belongsTo(User, {
-    foreignKey: 'user_id',
-    as: 'user'
-});
-
 Generation.belongsTo(Image, {
     foreignKey: 'image_id',
     as: 'source_image'
 });
 
-Session.belongsTo(User, {
-    foreignKey: 'user_id',
-    as: 'user'
-});
-
 module.exports = {
     Generation,
     Image,
-    User,
-    Session
+    AnonymousSession
 }

@@ -65,7 +65,7 @@ class DeApiService {
         }
     }
 
-    getRequestStatus = async (requestId, userId) => {
+    getRequestStatus = async (requestId, anonymousId) => {
         try {
             console.log(`📊 Checking request status: ${requestId}`);
             
@@ -114,7 +114,7 @@ class DeApiService {
                 console.log(`✅ Image saved: ${generatedFilename}`);
                 
                 const generatedImage = await Generation.findOne({
-                    where: {user_id: userId, parameters: {request_id: requestId}}
+                    where: {anonymous_id: anonymousId, parameters: {request_id: requestId}}
                 });
 
                 await generatedImage.update({

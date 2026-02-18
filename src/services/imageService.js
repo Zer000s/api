@@ -147,42 +147,32 @@ class ImageService {
     }
 
     // Удаление изображения (soft delete)
-    deleteImage = async (filename, userId) => {
-        try {
-            const image = await Image.findOne({
-                where: {
-                    filename,
-                    user_id: userId,
-                    is_deleted: false
-                }
-            });
-
-            if (!image) {
-                throw new Error('Image not found or access denied');
-            }
-
-            // Soft delete
-            await image.update({
-                is_deleted: true,
-                deleted_at: new Date()
-            });
-
-            // Опционально: физическое удаление файла
-            if (process.env.DELETE_FILES_PERMANENTLY === 'true') {
-                if (fs.existsSync(image.file_path)) {
-                    fs.unlinkSync(image.file_path);
-                }
-            }
-
-            return {
-                success: true,
-                message: 'Image deleted successfully',
-                filename: image.filename
-            };
-        } catch (error) {
-            console.error('Error deleting image:', error);
-            throw error;
+    async deleteImage(filename, userId, anonymousId) {
+        const where = { filename };
+        
+        if (userId) {
+            where.user_id = userId;
+        } else if (anonymousId) {
+            where.anonymous_id = anonymousId;
+        } else {
+            throw new Error('Access denied');
         }
+
+        const image = await Image.findOne({ where });
+
+        if (!image) {
+            throw new Error('Image not found');
+        }
+
+        // Удаляем файл
+        if (fs.existsSync(image.file_path)) {
+            fs.unlinkSync(image.file_path);
+        }
+
+        // Помечаем как удаленное в базе
+        await image.update({ is_deleted: true });
+
+        return { message: 'Image deleted successfully' };
     }
 
     // Получение информации об изображении

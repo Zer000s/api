@@ -58,10 +58,4 @@ router.get('/generation-status/:requestId',
     imageController.getGenerationStatus
 );
 
-// Остальные маршруты с общим лимитом
-router.get('/', rateLimits.api, imageController.getUserImages);
-router.get('/stats', rateLimits.api, imageController.getUserStats);
-router.get('/:filename', rateLimits.api, imageController.getImageInfo);
-router.delete('/:filename', rateLimits.api, imageController.delete);
-
 module.exports = router;

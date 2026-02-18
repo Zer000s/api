@@ -21,15 +21,13 @@ const createRateLimiter = (windowMs, max, message) => {
     // ✅ ПРАВИЛЬНЫЙ keyGenerator с использованием ipKeyGenerator
     keyGenerator: (req) => {
       // Для аутентифицированных пользователей можно использовать их ID
-      if (req.user?.id) {
-        return `user-${req.user.id}`;
+      if (req.user?.anonymousId) {
+        return `user-${req.user.anonymousId}`;
       }
       
       // Для всех остальных используем IP с правильной обработкой IPv6
       // Функция ipKeyGenerator автоматически применит маску подсети (по умолчанию /64 для IPv6)
       return ipKeyGenerator(req.ip);
-      
-      // ⚠️ НЕПРАВИЛЬНО: return req.ip;
     }
   };
 
