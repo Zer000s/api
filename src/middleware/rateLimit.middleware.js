@@ -2,11 +2,12 @@
 const rateLimit = require('express-rate-limit');
 const { RedisStore } = require('rate-limit-redis');
 const Redis = require('ioredis');
+// Импортируем helper функцию
+const { ipKeyGenerator } = require('express-rate-limit');
 
-// Настройка Redis (опционально, можно использовать MemoryStore для разработки)
+// Настройка Redis (опционально)
 const redisClient = process.env.REDIS_URL ? new Redis(process.env.REDIS_URL) : null;
 
-// Определяем лимиты для разных эндпоинтов
 const createRateLimiter = (windowMs, max, message) => {
   const config = {
     windowMs,
@@ -17,14 +18,22 @@ const createRateLimiter = (windowMs, max, message) => {
     },
     standardHeaders: true,
     legacyHeaders: false,
+    // ✅ ПРАВИЛЬНЫЙ keyGenerator с использованием ipKeyGenerator
     keyGenerator: (req) => {
-      // Используем комбинацию IP и user identifier для более точного трекинга
-      const userId = req.user?.id || req.headers['x-user-identifier'] || 'anonymous';
-      return `${req.ip}-${userId}`;
+      // Для аутентифицированных пользователей можно использовать их ID
+      if (req.user?.id) {
+        return `user-${req.user.id}`;
+      }
+      
+      // Для всех остальных используем IP с правильной обработкой IPv6
+      // Функция ipKeyGenerator автоматически применит маску подсети (по умолчанию /64 для IPv6)
+      return ipKeyGenerator(req.ip);
+      
+      // ⚠️ НЕПРАВИЛЬНО: return req.ip;
     }
   };
 
-  // Используем Redis store если доступен, иначе MemoryStore
+  // Используем Redis store если доступен
   if (redisClient) {
     config.store = new RedisStore({
       client: redisClient,
@@ -35,23 +44,20 @@ const createRateLimiter = (windowMs, max, message) => {
   return rateLimit(config);
 };
 
-// Специфичные лимиты для разных маршрутов
+// Лимиты для разных маршрутов
 const rateLimits = {
-  // Для загрузки изображений - 10 запросов в час
   upload: createRateLimiter(
     60 * 60 * 1000, // 1 час
     5,
     'Upload limit reached. Please try again later.'
   ),
   
-  // Для проверки статуса - 60 запросов в минуту
   status: createRateLimiter(
     60 * 1000, // 1 минута
     60,
     'Status check limit reached.'
   ),
   
-  // Общий лимит для API - 100 запросов в час
   api: createRateLimiter(
     60 * 60 * 1000, // 1 час
     100,
