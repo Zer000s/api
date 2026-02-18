@@ -53,9 +53,4 @@ router.post('/process',
     imageController.process
 );
 
-router.get('/generation-status/:requestId',
-    rateLimits.status,
-    imageController.getGenerationStatus
-);
-
 module.exports = router;

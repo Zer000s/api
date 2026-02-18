@@ -2,10 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
-const geminiService = require('./geminiService');
-const { Sequelize } = require('sequelize'); // ВАЖНО: импортируем Sequelize
-const sequelize = require('../config/database'); // Импортируем экземпляр sequelize
-const { User, Image, Generation } = require('../models/models');
+const { Image, Generation } = require('../models/models');
 
 class ImageService {
     constructor() {
