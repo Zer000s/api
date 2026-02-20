@@ -1,68 +1,59 @@
-// middleware/userIdentifier.middleware.js
 const { v4: uuidv4 } = require('uuid');
 const { AnonymousSession } = require('../models/models');
-const { Sequelize } = require('sequelize'); // ВАЖНО: импортируем Sequelize
-const sequelize = require('../config/database'); // Импортируем экземпляр sequelize
+
+const TTL = 30 * 24 * 60 * 60 * 1000;
 
 const userIdentifierMiddleware = async (req, res, next) => {
-    try {
-        // Пытаемся получить идентификатор из cookie или заголовка
-        let anonymousId = req.cookies.anonymousId;
+  try {
+    let anonymousId = req.cookies.anonymousId;
+    const now = new Date();
+    const ipAddress = req.ip;
+    const userAgent = req.get('User-Agent');
 
-        console.log(anonymousId)
+    if (!anonymousId) {
+      anonymousId = uuidv4();
 
-        // Получаем IP и User-Agent
-        const ipAddress = req.ip || req.connection.remoteAddress;
-        const userAgent = req.get('User-Agent');
-        
-        // Если нет anonymousId, создаем новый
-        if (!anonymousId) {
-            anonymousId = uuidv4();
-            
-            // Создаем запись в базе для анонимной сессии
-            await AnonymousSession.create({
-                anonymous_id: anonymousId,
-                ip_address: ipAddress,
-                user_agent: userAgent,
-                expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 дней
-            });
-            
-            // Устанавливаем cookie
-            res.cookie('anonymousId', anonymousId, {
-                maxAge: 30 * 24 * 60 * 60 * 1000, // 30 дней
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict'
-            });
-        } else {
-            // Обновляем существующую сессию
-            await AnonymousSession.update({
-                last_activity: new Date(),
-                ip_address: ipAddress,
-                user_agent: userAgent,
-                request_count: sequelize.literal('request_count + 1')
-            }, {
-                where: { anonymous_id: anonymousId }
-            });
+      await AnonymousSession.create({
+        anonymous_id: anonymousId,
+        ip_address: ipAddress,
+        user_agent: userAgent,
+        expires_at: new Date(Date.now() + TTL),
+        last_activity: now,
+        request_count: 1
+      });
+
+      res.cookie('anonymousId', anonymousId, {
+        maxAge: TTL,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax'
+      });
+    } else {
+      const [session] = await AnonymousSession.findOrCreate({
+        where: { anonymous_id: anonymousId },
+        defaults: {
+          anonymous_id: anonymousId,
+          ip_address: ipAddress,
+          user_agent: userAgent,
+          expires_at: new Date(Date.now() + TTL),
+          last_activity: now,
+          request_count: 1
         }
-        
-        // Добавляем информацию в request
-        req.user = {
-            id: null, // Для авторизованных пользователей
-            anonymousId: anonymousId
-        };
-        
-        req.clientInfo = {
-            ip: ipAddress,
-            userAgent,
-            anonymousId
-        };
-        
-        next();
-    } catch (error) {
-        console.error('Error in userIdentifierMiddleware:', error);
-        next(error);
+      });
+
+      if (session) {
+        await session.increment('request_count');
+        await session.update({ last_activity: now });
+      }
     }
+
+    req.user = { id: null, anonymousId };
+    req.clientInfo = { ip: ipAddress, userAgent, anonymousId };
+
+    next();
+  } catch (error) {
+    next(error);
+  }
 };
 
 module.exports = { userIdentifierMiddleware };

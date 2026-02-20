@@ -1,10 +1,6 @@
-// controllers/imageController.js (обновленная версия)
-const imageService = require('../services/imageService');
 const deApiService = require('../services/deApiService');
 const fs = require('fs');
-const { Image, Generation, AnonymousSession } = require('../models/models');
-const { Sequelize } = require('sequelize');
-const sequelize = require('../config/database');
+const { Image, Generation } = require('../models/models');
 
 class ImageController {
     // Process с поддержкой анонимных пользователей
@@ -20,25 +16,6 @@ class ImageController {
             }
 
             const file = req.file;
-
-            // Проверяем лимиты для анонимных пользователей
-            if (anonymousId) {
-                const session = await AnonymousSession.findOne({
-                    where: { anonymous_id: anonymousId }
-                });
-                
-                if (session && session.request_count >= 10) {
-                    // Удаляем файл
-                    if (fs.existsSync(file.path)) {
-                        fs.unlinkSync(file.path);
-                    }
-                    
-                    return res.status(429).json({
-                        success: false,
-                        error: 'Daily limit reached. Please register for more requests.'
-                    });
-                }
-            }
 
             const prompt = "Transform the animal in the image into a classical aristocratic oil portrait from the 17th–18th century. Preserve maximum likeness to the original animal: exact facial features, eye shape, muzzle proportions, fur pattern, color distribution, and overall identity must remain unchanged. Strictly preserve the original pose, body position, silhouette, proportions, scale, and head orientation from the source image. Do not alter anatomy or posture. The animal is resting on an elegant classical cushion, fully consistent with the old master aesthetic. The cushion is made of rich velvet fabric in deep warm tones (burgundy, dark brown, muted gold), with subtle embroidery and soft folds, naturally supporting the animal without changing its pose. Classical old European masters painting style, very rich oil paint texture with highly visible, layered, and directional brushstrokes, traditional canvas surface. Soft dramatic chiaroscuro lighting, dark atmospheric background. Luxurious velvet cloak with fur trim and refined gold jewelry. Bold, tactile oil strokes across the cushion, garments, and background, pronounced impasto highlights, expressive yet controlled painterly technique. High detail in fur, fabric, cushion texture, and metal, museum-quality fine art, vintage color grading, regal ceremonial portrait atmosphere.";
 

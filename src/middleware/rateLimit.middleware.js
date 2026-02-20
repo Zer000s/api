@@ -48,18 +48,6 @@ const rateLimits = {
     60 * 60 * 1000, // 1 час
     5,
     'Upload limit reached. Please try again later.'
-  ),
-  
-  status: createRateLimiter(
-    60 * 1000, // 1 минута
-    60,
-    'Status check limit reached.'
-  ),
-  
-  api: createRateLimiter(
-    60 * 60 * 1000, // 1 час
-    100,
-    'API limit reached.'
   )
 };
 

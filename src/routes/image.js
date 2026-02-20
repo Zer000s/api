@@ -31,15 +31,24 @@ const upload = multer({
         fileSize: parseInt(process.env.MAX_FILE_SIZE || '10485760') // 10MB
     },
     fileFilter: (req, file, cb) => {
-        const allowedTypes = /jpeg|jpg|png|gif|webp/;
-        const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-        const mimetype = allowedTypes.test(file.mimetype);
-        
-        if (mimetype && extname) {
-            cb(null, true);
-        } else {
-            cb(new Error('Only image files are allowed (jpeg, jpg, png, gif, webp)'));
+
+        const allowedMimeTypes = [
+            'image/jpeg',
+            'image/jpg',
+            'image/png',
+            'image/gif',
+            'image/webp'
+        ];
+
+        const ext = path.extname(file.originalname).toLowerCase();
+
+        const allowedExt = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+
+        if (allowedMimeTypes.includes(file.mimetype) && allowedExt.includes(ext)) {
+            return cb(null, true);
         }
+
+        return cb(new multer.MulterError('LIMIT_UNEXPECTED_FILE', 'Invalid file type'));
     }
 });
 
